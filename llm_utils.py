@@ -105,7 +105,7 @@ def get_llm(model_path='models/llama-2-7b-chat.Q4_K_M.gguf', n_ctx=4096):
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
     llm = LlamaCpp(
         model_path=model_path,
-        temperature=0.01, #0.75,
+        temperature=0.0, #0.75,
         max_tokens=min(n_ctx, 4000),
         n_ctx=n_ctx,
         top_p=1,

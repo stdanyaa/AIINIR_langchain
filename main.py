@@ -17,8 +17,7 @@ vectorstore = get_db(documents, embedder_name='ai-forever/ruElectra-large')
 
 llm = get_llm(n_ctx=5_000)
 # rephraser = get_query_rephraser(llm)
-rephraser = None
-retriever = get_retriever(vectorstore, {"k": 3}, rephraser)
+retriever = get_retriever(vectorstore, {"k": 4})
 chain = get_qa_langchain(llm, retriever)
 
 app = FastAPI()
