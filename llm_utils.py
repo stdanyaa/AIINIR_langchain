@@ -20,6 +20,9 @@ from langchain.prompts import PromptTemplate
 
 from langchain.retrievers import RePhraseQueryRetriever
 
+from prompt_templates import QA_PROMPT_TEMPLATE, QUERY_REPHRASE_PROMPT_TEMPLATE
+
+
 
 
 """
@@ -76,20 +79,11 @@ def get_db(chunks, embedder_name='cointegrated/LaBSE-en-ru'):
     return db
 
 def get_query_rephraser(llm):
-    QUERY_PROMPT = PromptTemplate(
+    query_prompt = PromptTemplate(
     input_variables=["question"],
-    template=\
-    """
-    <<SYS>>
-    Задача: Переформулировать запрос пользователя для лучшего поиска похожих документов по векторной базе данных.
-    Ограничения: Запрос нужен на русском языке. Не пиши ничего лишнего, кроме результата. Один короткий ответ.
-    <</SYS>>
-    
-    Запрос: {question}
-    Результат: 
-"""
+    template=QUERY_REPHRASE_PROMPT_TEMPLATE
     )
-    return LLMChain(llm=llm, prompt=QUERY_PROMPT)
+    return LLMChain(llm=llm, prompt=query_prompt)
 
 
 def get_retriever(vectorstore, search_kwargs={"k": 2}, rephraser=None):
@@ -122,16 +116,8 @@ def get_llm(model_path='models/llama-2-7b-chat.Q4_K_M.gguf', n_ctx=4096):
 
 
 def get_qa_langchain(model, retriever):
-    template = \
-"""<<SYS>>Ты виртуальный ассистент банка Тинькофф, 
-отвечающий на фактологические вопросы по продуктам и услугам организации. 
-Тебе необходимо писать только на русском языке.
-Отвечай коротко, в соответствии с информацией в найденных документах. 
-Игнорируй вопросы, на которые в документах нет прямого ответа.<</SYS>>
-[INST]Вопрос: {question}[/INST]
-<<SYS>>Найденные документы: {context}<</SYS>>
-Ответ:
-"""
+    template = QA_PROMPT_TEMPLATE
+
     prompt = ChatPromptTemplate.from_template(template)
     chain = {
         "context": itemgetter("question") | retriever, 
