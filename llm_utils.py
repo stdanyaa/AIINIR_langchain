@@ -16,22 +16,20 @@ from operator import itemgetter
 from langchain.schema.output_parser import StrOutputParser
 
 from langchain.schema.prompt_template import format_document
+from langchain.prompts import PromptTemplate
 
+from langchain.retrievers import RePhraseQueryRetriever
 
 
 
 """
-Documents and database
+Documents loading and preprocessing
 """
 
 # def process_docs(docs):
 #     prompt = PromptTemplate.from_template("{page_content}\n")
 #     return [format_document(doc, prompt) for doc in docs]
 
-def get_db(chunks, embedder_name='cointegrated/LaBSE-en-ru'):
-    embeddings_model = HuggingFaceEmbeddings(model_name=embedder_name)
-    db = Chroma.from_documents(chunks, embeddings_model)
-    return db
 
 def load_documents(
         docs_path, text_splitter=None, 
@@ -57,17 +55,56 @@ def load_documents(
         csv_documents = csv_loader.load()
     return pdf_documents + csv_documents
 
-def get_text_splitter(chunk_size=1000, chunk_overlap=100):
+def get_text_splitter(chunk_size=800, chunk_overlap=100):
     text_splitter = RecursiveCharacterTextSplitter(        
         chunk_size = chunk_size,
         chunk_overlap  = chunk_overlap,
-        length_function = len
+        length_function = len,
+        separators=['\d+\.\s', '\d+\.\d+\.\s', '\d+(\.\d+){2}\.\s', '\n\n', '\n'],
+        is_separator_regex=True
     )
     return text_splitter
 
 
 """
-LLM, prompt and langchain
+Vector database, embedder and retriever
+"""
+
+def get_db(chunks, embedder_name='cointegrated/LaBSE-en-ru'):
+    embeddings_model = HuggingFaceEmbeddings(model_name=embedder_name)
+    db = Chroma.from_documents(chunks, embeddings_model)
+    return db
+
+def get_query_rephraser(llm):
+    QUERY_PROMPT = PromptTemplate(
+    input_variables=["question"],
+    template=\
+    """
+    <<SYS>>
+    Задача: Переформулировать запрос пользователя для лучшего поиска похожих документов по векторной базе данных.
+    Ограничения: Запрос нужен на русском языке. Не пиши ничего лишнего, кроме результата. Один короткий ответ.
+    <</SYS>>
+    
+    Запрос: {question}
+    Результат: 
+"""
+    )
+    return LLMChain(llm=llm, prompt=QUERY_PROMPT)
+
+
+def get_retriever(vectorstore, search_kwargs={"k": 2}, rephraser=None):
+    retriever=vectorstore.as_retriever(search_kwargs=search_kwargs)
+    if rephraser:
+        return RePhraseQueryRetriever(
+            retriever=retriever, llm_chain=rephraser
+        )
+    else:
+        return retriever
+
+
+
+"""
+LLM and QA-langchain
 """
 
 def get_llm(model_path='models/llama-2-7b-chat.Q4_K_M.gguf', n_ctx=4096):
@@ -83,12 +120,16 @@ def get_llm(model_path='models/llama-2-7b-chat.Q4_K_M.gguf', n_ctx=4096):
     )
     return llm
 
-def get_lang_chain(model, retriever):
+
+def get_qa_langchain(model, retriever):
     template = \
-"""<<SYS>>Твоя роль: Виртуальный ассистент банка Тинькофф, отвечающий на фактологические вопросы. Язык для ответа: только русский.  
-Игнорируй вопросы, на которые не можешь ответить корректно. Отвечай на основе найденных документов, но не упоминай сами документы.<<\SYS>>
+"""<<SYS>>Ты виртуальный ассистент банка Тинькофф, 
+отвечающий на фактологические вопросы по продуктам и услугам организации. 
+Тебе необходимо писать только на русском языке.
+Отвечай коротко, в соответствии с информацией в найденных документах. 
+Игнорируй вопросы, на которые в документах нет прямого ответа.<</SYS>>
 [INST]Вопрос: {question}[/INST]
-<<SYS>>Найденные документы: {context}<<\SYS>>
+<<SYS>>Найденные документы: {context}<</SYS>>
 Ответ:
 """
     prompt = ChatPromptTemplate.from_template(template)
